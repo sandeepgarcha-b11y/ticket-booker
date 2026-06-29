@@ -1,0 +1,65 @@
+name: poll
+
+# Polls the ATG show calendar every ~5 minutes and alerts via Telegram when a
+# performance becomes bookable. Scheduled workflows only run from the default
+# branch, so this must live on main to fire.
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 min (GitHub's minimum granularity)
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Diagnostic run: print what was found, do not notify/persist"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write            # to commit state.json back
+
+concurrency:
+  group: poll                # never overlap runs
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('requirements.txt') }}
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Poll
+        env:
+          SHOW_URL: ${{ vars.SHOW_URL || 'https://www.atgtickets.com/shows/1536/ambassadors-theatre/calendar/2026-06-30' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DEBUG: ${{ inputs.debug && '1' || '' }}
+        run: python poll.py
+
+      - name: Persist state
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug) }}
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name "ticket-poller[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "Update poller state [skip ci]"
+            git push
+          else
+            echo "state.json unchanged"
+          fi
