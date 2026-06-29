@@ -10,10 +10,12 @@ Currently watching:
 
 A GitHub Actions workflow (`.github/workflows/poll.yml`) runs every ~5 minutes
 (GitHub's minimum cron granularity). Each run loads the calendar page in
-headless Chromium, figures out which performances can be booked, compares that
-against the last-seen set in `state.json`, and pings you on Telegram if anything
-is **newly** bookable. State is committed back so you only get alerted once per
-drop, not every 5 minutes.
+headless Chromium and intercepts the JSON the page itself fetches from ATG's
+`calendar-service` GraphQL endpoint. Each performance carries an
+`availabilityStatus` (SOLDOUT / LOW / MEDIUM / GOOD …); anything that isn't
+clearly sold-out counts as bookable. That set is compared against the last-seen
+set in `state.json`, and you get a Telegram ping for anything **newly** bookable.
+State is committed back so you only get alerted once per drop, not every 5 min.
 
 Polling is one lightweight page load per run (~288/day) — polite to the site.
 

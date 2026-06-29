@@ -1,12 +1,21 @@
 """Poll an ATG Tickets show calendar and alert (via Telegram) when tickets
 become bookable.
 
-Runs on a GitHub Actions schedule. Each run:
-  1. Loads the show's calendar page in headless Chromium (the page is a JS app
-     and the site 403s plain bots, so a real browser is the reliable path).
-  2. Extracts the set of *bookable* performances currently shown.
-  3. Compares against the previously-seen set persisted in state.json.
-  4. If anything is newly bookable, sends a Telegram message.
+How it detects availability
+---------------------------
+The calendar page is a JS app that fetches its data from a GraphQL endpoint
+(`calendar-service.core.platform.atgtickets.com`). Rather than scrape the DOM
+or reverse-engineer that query, we load the page in headless Chromium and let it
+make its own (correctly-authenticated) request, then intercept the JSON
+response. Each performance carries an `availabilityStatus` such as SOLDOUT,
+LOW, MEDIUM or GOOD; anything that isn't a clearly non-bookable status counts as
+available.
+
+Each run:
+  1. Loads the show's calendar page, captures the calendar-service JSON.
+  2. Builds the set of currently-bookable performances.
+  3. Diffs against the set last seen in state.json.
+  4. Telegrams you about anything NEWLY bookable (so no repeat spam).
   5. Writes the new set back to state.json (the workflow commits it).
 
 Env vars:
@@ -23,6 +32,13 @@ import re
 import sys
 from datetime import datetime, timezone
 
+try:
+    from zoneinfo import ZoneInfo
+
+    LONDON = ZoneInfo("Europe/London")
+except Exception:  # noqa: BLE001
+    LONDON = timezone.utc
+
 URL = os.environ.get(
     "SHOW_URL",
     "https://www.atgtickets.com/shows/1536/ambassadors-theatre/calendar/2026-06-30",
@@ -37,102 +53,86 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
+# availabilityStatus values that mean "you cannot buy a ticket". Anything else
+# (GOOD / MEDIUM / LOW / LIMITED / AVAILABLE / a new value we haven't seen) is
+# treated as bookable — we'd rather alert on an unexpected status than miss a
+# genuine drop.
+NON_BOOKABLE = {
+    "SOLDOUT", "SOLD", "UNAVAILABLE", "CANCELLED", "CANCELED", "OFFSALE",
+    "NOTONSALE", "COMINGSOON", "PAST", "PASTPERFORMANCE", "EXPIRED",
+    "NOPERFORMANCE", "NONE", "",
+}
+
 
 def log(*a):
     print(*a, flush=True)
 
 
-# --- browser-side extraction -------------------------------------------------
-# Returns, from the rendered page:
-#   bookable:  list of {label, href} for performances that can be booked now
-#   sold_out:  list of labels explicitly marked sold out / unavailable
-#   sample:    a slice of rendered text (debug aid)
-# The selectors are intentionally broad: ATG marks bookable performances with a
-# link into the booking/seat-selection flow, and sold-out ones with disabled
-# controls or "sold out" text. We treat "has an enabled booking link" as the
-# availability signal and exclude anything flagged sold out / disabled.
-EXTRACT_JS = r"""
-() => {
-  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
-  const isHidden = (el) => {
-    const st = window.getComputedStyle(el);
-    return st.display === 'none' || st.visibility === 'hidden' || el.offsetParent === null && st.position !== 'fixed';
-  };
-  const soldRe = /(sold\s*out|no\s+availab|no\s+tickets|unavailable|fully\s+booked)/i;
-
-  // Candidate booking links: into the booking / seat-selection / basket flow.
-  const linkSel = 'a[href*="book" i], a[href*="basket" i], a[href*="checkout" i], a[href*="select" i], a[href*="seat" i], a[href*="performance" i]';
-  const bookable = [];
-  const seen = new Set();
-  document.querySelectorAll(linkSel).forEach((a) => {
-    if (isHidden(a)) return;
-    const cls = (a.className || '') + ' ' + (a.getAttribute('aria-disabled') || '');
-    if (/disabled/i.test(cls)) return;
-    // Build a human label from the link and its surrounding context.
-    let ctx = a;
-    for (let i = 0; i < 4 && ctx && ctx.parentElement; i++) ctx = ctx.parentElement;
-    const ctxText = norm(ctx ? ctx.innerText : a.innerText);
-    if (soldRe.test(ctxText) && !/book|buy/i.test(norm(a.innerText))) return;
-    const label = norm(a.innerText) || ctxText.slice(0, 60);
-    const key = a.href + '|' + label;
-    if (seen.has(key)) return;
-    seen.add(key);
-    bookable.push({ label, href: a.href });
-  });
-
-  // Enabled "Book"/"Buy" buttons (some flows use buttons, not links).
-  document.querySelectorAll('button').forEach((b) => {
-    if (isHidden(b) || b.disabled) return;
-    const t = norm(b.innerText);
-    if (/^(book|buy|select)\b/i.test(t)) {
-      let ctx = b;
-      for (let i = 0; i < 4 && ctx && ctx.parentElement; i++) ctx = ctx.parentElement;
-      const label = norm(ctx ? ctx.innerText : t).slice(0, 80);
-      const key = 'btn|' + label;
-      if (!seen.has(key)) { seen.add(key); bookable.push({ label, href: location.href }); }
-    }
-  });
-
-  const sold_out = [];
-  document.querySelectorAll('*').forEach((el) => {
-    if (el.childElementCount === 0) {
-      const t = norm(el.innerText);
-      if (t && soldRe.test(t) && t.length < 80) sold_out.push(t);
-    }
-  });
-
-  return {
-    bookable,
-    sold_out: Array.from(new Set(sold_out)).slice(0, 40),
-    sample: norm(document.body.innerText).slice(0, 1500),
-    title: document.title,
-  };
-}
-"""
+def norm_status(s):
+    return re.sub(r"[^A-Z]", "", (s or "").upper())
 
 
-def fetch_state():
+def perf_label(perf):
+    """Human-readable label like 'Tue 30 Jun 2026 19:30 (Evening) from £160'."""
+    iso = (perf.get("dates") or {}).get("performanceDate") or ""
+    when = iso
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(LONDON)
+        when = dt.strftime("%a %d %b %Y %H:%M")
+    except Exception:  # noqa: BLE001
+        pass
+    desc = perf.get("performanceTimeDescription") or ""
+    price = (perf.get("price") or {}).get("minPrice")
+    bits = [when]
+    if desc:
+        bits.append(f"({desc})")
+    if price:
+        bits.append(f"from £{price}")
+    return " ".join(bits)
+
+
+def fetch_performances():
+    """Return ({perf_id: perf_dict}, page_title) from the calendar-service JSON."""
     from playwright.sync_api import sync_playwright
 
+    responses = []
+    title = ""
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--no-sandbox"])
         ctx = browser.new_context(user_agent=USER_AGENT, locale="en-GB")
         page = ctx.new_page()
-        # Drop heavy resources we don't need — lighter on us and on ATG's CDN.
+        # Skip heavy assets we don't need — lighter on us and on ATG's CDN.
         page.route(
-            re.compile(r"\.(png|jpg|jpeg|gif|webp|svg|woff2?|ttf|otf|mp4|css)(\?|$)", re.I),
+            re.compile(r"\.(png|jpe?g|gif|webp|svg|woff2?|ttf|otf|mp4|css)(\?|$)", re.I),
             lambda route: route.abort(),
+        )
+        page.on(
+            "response",
+            lambda resp: responses.append(resp) if "calendar-service" in resp.url else None,
         )
         try:
             page.goto(URL, wait_until="networkidle", timeout=60000)
         except Exception as e:  # noqa: BLE001
             log(f"[warn] navigation: {e}")
-        # Give late XHR-driven availability a moment to render.
-        page.wait_for_timeout(3500)
-        result = page.evaluate(EXTRACT_JS)
-        result["final_url"] = page.url
+        page.wait_for_timeout(3000)
+        try:
+            title = page.title()
+        except Exception:  # noqa: BLE001
+            pass
+
+        perfs = {}
+        for resp in responses:
+            try:
+                payload = resp.json()
+            except Exception:  # noqa: BLE001
+                continue
+            show = (((payload or {}).get("data") or {}).get("getShow") or {}).get("show") or {}
+            for perf in show.get("performances") or []:
+                pid = perf.get("id")
+                if pid:
+                    perfs[pid] = perf
         browser.close()
-        return result
+    return perfs, title
 
 
 def notify(text):
@@ -156,15 +156,20 @@ def notify(text):
 def load_prev():
     try:
         with open(STATE_PATH) as f:
-            return set(json.load(f).get("bookable", []))
+            return set(json.load(f).get("available_ids", []))
     except (FileNotFoundError, json.JSONDecodeError):
         return set()
 
 
-def save_state(labels):
+def save_state(available):
+    """available: dict perf_id -> label"""
     with open(STATE_PATH, "w") as f:
         json.dump(
-            {"bookable": sorted(labels), "updated": datetime.now(timezone.utc).isoformat()},
+            {
+                "available_ids": sorted(available),
+                "available": [available[i] for i in sorted(available)],
+                "updated": datetime.now(timezone.utc).isoformat(),
+            },
             f,
             indent=2,
         )
@@ -172,35 +177,40 @@ def save_state(labels):
 
 def main():
     log(f"Polling {URL}")
-    result = fetch_state()
-    bookable = result.get("bookable", [])
-    current = {b["label"] for b in bookable if b.get("label")}
+    perfs, title = fetch_performances()
+    log(f"title={title!r} performances_seen={len(perfs)}")
 
-    log(f"title={result.get('title')!r} final_url={result.get('final_url')}")
-    log(f"bookable_count={len(bookable)} sold_out_count={len(result.get('sold_out', []))}")
+    if not perfs:
+        log("[warn] No performances captured from calendar-service. The page "
+            "structure or endpoint may have changed — check a debug run.")
+
+    available = {}   # id -> label
+    counts = {}
+    for pid, perf in perfs.items():
+        status = norm_status(perf.get("availabilityStatus"))
+        counts[status or "(empty)"] = counts.get(status or "(empty)", 0) + 1
+        if status not in NON_BOOKABLE:
+            available[pid] = f"{perf_label(perf)} [{perf.get('availabilityStatus')}]"
+
+    log(f"status_breakdown={counts}")
+    log(f"bookable_now={len(available)}")
+
     if DEBUG:
-        log("--- bookable ---")
-        for b in bookable[:40]:
-            log(f"  {b['label']!r} -> {b['href']}")
-        log("--- sold_out ---")
-        for s in result.get("sold_out", [])[:40]:
-            log(f"  {s!r}")
-        log("--- rendered sample ---")
-        log(result.get("sample", ""))
+        log("--- bookable performances ---")
+        for pid in sorted(available, key=lambda i: available[i]):
+            log(f"  {available[pid]}")
         log("\n[debug] not notifying / not persisting state")
         return 0
 
     prev = load_prev()
-    newly = current - prev
+    newly = [available[i] for i in available if i not in prev]
     if newly:
         lines = "\n".join(f"• {x}" for x in sorted(newly))
-        notify(
-            f"🎟️ Tickets available!\n{result.get('title') or 'Show'}\n\n{lines}\n\n{URL}"
-        )
+        notify(f"🎟️ Tickets available — {title or '1536'}\n\n{lines}\n\n{URL}")
     else:
-        log("No newly-bookable performances.")
+        log("Nothing newly bookable.")
 
-    save_state(current)
+    save_state(available)
     return 0
 
 
