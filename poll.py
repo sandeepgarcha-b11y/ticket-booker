@@ -43,6 +43,20 @@ URL = os.environ.get(
     "SHOW_URL",
     "https://www.atgtickets.com/shows/1536/ambassadors-theatre/calendar/2026-06-30",
 )
+
+
+def current_url():
+    """The calendar URL with its date rewritten to *today* (Europe/London).
+
+    The date segment in an ATG calendar URL only chooses which month the view
+    lands on — the backend returns the show's upcoming performances regardless.
+    Rewriting it to today's date keeps the URL valid forever (a hard-coded date
+    eventually points at a past month) with no manual upkeep.
+    """
+    today = datetime.now(LONDON).date().isoformat()
+    return re.sub(r"(/calendar/)\d{4}-\d{2}-\d{2}", r"\g<1>" + today, URL)
+
+
 STATE_PATH = os.environ.get("STATE_PATH", "state.json")
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
@@ -91,7 +105,7 @@ def perf_label(perf):
     return " ".join(bits)
 
 
-def fetch_performances():
+def fetch_performances(url):
     """Return ({perf_id: perf_dict}, page_title) from the calendar-service JSON."""
     from playwright.sync_api import sync_playwright
 
@@ -111,7 +125,7 @@ def fetch_performances():
             lambda resp: responses.append(resp) if "calendar-service" in resp.url else None,
         )
         try:
-            page.goto(URL, wait_until="networkidle", timeout=60000)
+            page.goto(url, wait_until="networkidle", timeout=60000)
         except Exception as e:  # noqa: BLE001
             log(f"[warn] navigation: {e}")
         page.wait_for_timeout(3000)
@@ -176,8 +190,9 @@ def save_state(available):
 
 
 def main():
-    log(f"Polling {URL}")
-    perfs, title = fetch_performances()
+    url = current_url()
+    log(f"Polling {url}")
+    perfs, title = fetch_performances(url)
     log(f"title={title!r} performances_seen={len(perfs)}")
 
     if not perfs:
@@ -206,7 +221,7 @@ def main():
     newly = [available[i] for i in available if i not in prev]
     if newly:
         lines = "\n".join(f"• {x}" for x in sorted(newly))
-        notify(f"🎟️ Tickets available — {title or '1536'}\n\n{lines}\n\n{URL}")
+        notify(f"🎟️ Tickets available — {title or '1536'}\n\n{lines}\n\n{url}")
     else:
         log("Nothing newly bookable.")
 
