@@ -5,7 +5,10 @@ name: poll
 # branch, so this must live on main to fire.
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 min (GitHub's minimum granularity)
+    # Every 5 min during daytime only — ticket releases/returns happen in box-
+    # office hours, so overnight polling is just noise. GitHub cron is UTC-only;
+    # the show runs entirely in BST (UTC+1), so 08–20 UTC == ~09:00–21:00 London.
+    - cron: "*/5 8-20 * * *"
   workflow_dispatch:
     inputs:
       debug:
