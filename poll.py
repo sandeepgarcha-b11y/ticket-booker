@@ -149,15 +149,16 @@ def fetch_performances(url):
     return perfs, title
 
 
-def notify(text):
-    if not (TG_TOKEN and TG_CHAT):
+def notify(text, chat=None):
+    chat = chat or TG_CHAT
+    if not (TG_TOKEN and chat):
         log("[notify] Telegram not configured; would have sent:\n" + text)
         return False
     import requests
 
     r = requests.post(
         f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-        data={"chat_id": TG_CHAT, "text": text, "disable_web_page_preview": "true"},
+        data={"chat_id": chat, "text": text, "disable_web_page_preview": "true"},
         timeout=30,
     )
     if r.status_code != 200:
@@ -165,6 +166,50 @@ def notify(text):
         return False
     log("[notify] sent")
     return True
+
+
+def run_test():
+    """One-off: confirm Telegram delivery and surface the chat id.
+
+    Uses TELEGRAM_CHAT_ID if set, otherwise discovers it from getUpdates (you
+    must have messaged the bot first). Sends a test message and prints the chat
+    id so it can be saved as the TELEGRAM_CHAT_ID secret.
+    """
+    if not TG_TOKEN:
+        log("[test] TELEGRAM_BOT_TOKEN is not set — nothing to test.")
+        return 1
+    import requests
+
+    chat = TG_CHAT
+    if not chat:
+        try:
+            data = requests.get(
+                f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates", timeout=30
+            ).json()
+        except Exception as e:  # noqa: BLE001
+            log(f"[test] getUpdates failed: {e!r}")
+            return 1
+        ids = []
+        for upd in data.get("result", []):
+            msg = upd.get("message") or upd.get("edited_message") or upd.get("channel_post") or {}
+            cid = (msg.get("chat") or {}).get("id")
+            if cid is not None and cid not in ids:
+                ids.append(cid)
+        if not ids:
+            log("[test] No chats found. Open https://t.me/ticket_sg_finder_bot, press "
+                "Start (or send any message), then run this test again.")
+            return 1
+        chat = str(ids[-1])
+        log(f"[test] discovered chat id: {chat}")
+        log(f"[test] >>> Save this as the TELEGRAM_CHAT_ID secret: {chat}")
+
+    ok = notify(
+        "✅ ticket-booker is connected.\n\n"
+        "You'll get a message here the moment a 1536 performance opens up. "
+        "This is just a test — no tickets are available yet.",
+        chat=chat,
+    )
+    return 0 if ok else 1
 
 
 def load_prev():
@@ -190,6 +235,9 @@ def save_state(available):
 
 
 def main():
+    if os.environ.get("MODE", "").lower() == "test":
+        return run_test()
+
     url = current_url()
     log(f"Polling {url}")
     perfs, title = fetch_performances(url)

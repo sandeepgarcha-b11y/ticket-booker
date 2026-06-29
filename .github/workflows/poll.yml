@@ -12,6 +12,18 @@ on:
         description: "Diagnostic run: print what was found, do not notify/persist"
         type: boolean
         default: false
+      test:
+        description: "Send a Telegram test message (confirms delivery + prints chat id)"
+        type: boolean
+        default: false
+      bot_token:
+        description: "(test only) bot token, if not yet saved as a secret — masked in logs"
+        type: string
+        default: ""
+      chat_id:
+        description: "(test only) chat id, if known — otherwise auto-discovered"
+        type: string
+        default: ""
 
 permissions:
   contents: write            # to commit state.json back
@@ -25,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Mask any token passed as input
+        if: ${{ inputs.bot_token != '' }}
+        run: echo "::add-mask::${{ inputs.bot_token }}"
 
       - uses: actions/setup-python@v5
         with:
@@ -46,13 +62,15 @@ jobs:
       - name: Poll
         env:
           SHOW_URL: ${{ vars.SHOW_URL || 'https://www.atgtickets.com/shows/1536/ambassadors-theatre/calendar/2026-06-30' }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Secrets take precedence; inputs are a fallback for one-off test runs.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || inputs.bot_token }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || inputs.chat_id }}
           DEBUG: ${{ inputs.debug && '1' || '' }}
+          MODE: ${{ inputs.test && 'test' || '' }}
         run: python poll.py
 
       - name: Persist state
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug) }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test) }}
         run: |
           if [ -n "$(git status --porcelain state.json)" ]; then
             git config user.name "ticket-poller[bot]"
