@@ -1,0 +1,29 @@
+name: discover-twickets
+
+# One-off investigative run: learn how a Twickets event page exposes resale
+# listings (and whether the site blocks cloud IPs). Notifies no one.
+on:
+  workflow_dispatch:
+    inputs:
+      event_url:
+        description: "Twickets event URL to inspect"
+        type: string
+        default: "https://www.twickets.live/en/tour/1536/1921213724417335296"
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Run discovery
+        env:
+          EVENT_URL: ${{ inputs.event_url }}
+        run: python discover_twickets.py

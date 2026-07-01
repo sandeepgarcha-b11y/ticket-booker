@@ -273,7 +273,13 @@ def main():
     else:
         log("Nothing newly bookable.")
 
-    save_state(available)
+    # Only rewrite (and thus commit) state.json when the available SET actually
+    # changes — otherwise the timestamp alone would produce a commit every run.
+    if set(available) != prev:
+        save_state(available)
+        log("state changed; persisted")
+    else:
+        log("state unchanged; not persisting")
     return 0
 
 
