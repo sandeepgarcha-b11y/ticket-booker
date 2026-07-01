@@ -104,6 +104,18 @@ def main():
     current = {key(x) for x in low} | {key(x) for x in good}
     log(f"twickets: low={len(low)} good={len(good)} total_listings={len(current)}")
 
+    if os.environ.get("MODE", "").lower() == "test":
+        n = len(current)
+        state = f"{n} listing(s) currently on sale" if n else "nothing on sale right now"
+        notify(
+            "✅ Twickets watcher is live for 1536.\n"
+            f"Right now: {state}.\n\n"
+            "You'll get a message here the moment resale tickets appear.\n"
+            f"{EVENT_URL}"
+        )
+        log("[test] sent test message; not persisting")
+        return 0
+
     if DEBUG:
         log(f"low sample: {json.dumps(low[:3])}")
         log(f"good sample: {json.dumps(good[:3])}")

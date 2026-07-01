@@ -12,6 +12,10 @@ on:
         description: "Diagnostic run: print findings, do not notify/persist"
         type: boolean
         default: false
+      test:
+        description: "Send a Telegram test message confirming the watcher is live"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -37,9 +41,10 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TWICKETS_TOUR_ID: ${{ vars.TWICKETS_TOUR_ID || '1921213724417335296' }}
           DEBUG: ${{ inputs.debug && '1' || '' }}
+          MODE: ${{ inputs.test && 'test' || '' }}
         run: python twickets.py
       - name: Persist state
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug) }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test) }}
         run: |
           if [ -n "$(git status --porcelain twickets_state.json)" ]; then
             git config user.name "ticket-poller[bot]"
