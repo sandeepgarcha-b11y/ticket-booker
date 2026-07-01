@@ -1,0 +1,52 @@
+name: twickets
+
+# Watches Twickets for resale availability of 1536 and alerts via Telegram.
+# Just a lightweight JSON API call (no browser), so it runs cheaply 24/7 —
+# resale tickets can appear at any hour and sell fast.
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 min, round the clock
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Diagnostic run: print findings, do not notify/persist"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: twickets
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: pip install "requests>=2.31"
+      - name: Watch
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TWICKETS_TOUR_ID: ${{ vars.TWICKETS_TOUR_ID || '1921213724417335296' }}
+          DEBUG: ${{ inputs.debug && '1' || '' }}
+        run: python twickets.py
+      - name: Persist state
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug) }}
+        run: |
+          if [ -n "$(git status --porcelain twickets_state.json)" ]; then
+            git config user.name "ticket-poller[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add twickets_state.json
+            git commit -m "Update twickets state [skip ci]"
+            git push
+          else
+            echo "twickets_state.json unchanged"
+          fi
