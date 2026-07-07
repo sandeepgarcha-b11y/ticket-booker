@@ -1,15 +1,5 @@
 {
-  "available_ids": [
-    "239C785E-3353-490F-8CA7-14B7EB806254",
-    "85EEE3B5-504F-472B-B45D-0230761BB0A8",
-    "87EBA33D-A00D-4E29-9811-A8130F0929E8",
-    "DDDC44FF-7826-4CE6-BF8A-3913A412E4C0"
-  ],
-  "available": [
-    "Fri 17 Jul 2026 19:30 (Evening) from \u00a3185 [LOW]",
-    "Mon 13 Jul 2026 19:30 (Evening) from \u00a3185 [LOW]",
-    "Sat 18 Jul 2026 19:30 (Evening) from \u00a3185 [LOW]",
-    "Sat 18 Jul 2026 14:30 (Matinee) from \u00a3185 [LOW]"
-  ],
-  "updated": "2026-07-06T21:48:54.993893+00:00"
+  "available_ids": [],
+  "available": [],
+  "updated": "2026-07-07T13:22:27.332894+00:00"
 }
