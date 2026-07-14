@@ -29,6 +29,7 @@ import requests
 
 TOUR_ID = os.environ.get("TWICKETS_TOUR_ID", "1921213724417335296")
 API_KEY = os.environ.get("TWICKETS_API_KEY", "83d6ec0c-54bb-4da3-b2a1-f3cb47b984f1")
+SHOW_NAME = os.environ.get("SHOW_NAME", "1536")
 EVENT_URL = os.environ.get("EVENT_URL", f"https://www.twickets.live/en/tour/1536/{TOUR_ID}")
 STATE_PATH = os.environ.get("STATE_PATH", "twickets_state.json")
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -108,7 +109,7 @@ def main():
         n = len(current)
         state = f"{n} listing(s) currently on sale" if n else "nothing on sale right now"
         notify(
-            "✅ Twickets watcher is live for 1536.\n"
+            f"✅ Twickets watcher is live for {SHOW_NAME}.\n"
             f"Right now: {state}.\n\n"
             "You'll get a message here the moment resale tickets appear.\n"
             f"{EVENT_URL}"
@@ -126,7 +127,7 @@ def main():
     newly = current - prev
     if newly:
         notify(
-            "🎟️ Resale tickets on Twickets — 1536\n"
+            f"🎟️ Resale tickets on Twickets — {SHOW_NAME}\n"
             f"{len(good)} good + {len(low)} lower availability listing(s) now on sale.\n\n"
             f"{EVENT_URL}"
         )

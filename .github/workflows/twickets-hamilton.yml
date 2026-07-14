@@ -1,0 +1,60 @@
+name: twickets-hamilton
+
+# Watches Twickets for resale availability of Hamilton and alerts via Telegram.
+# Same lightweight JSON-API watcher as 1536, just a different tour id + state
+# file so the two don't collide.
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 min, round the clock
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Diagnostic run: print findings, do not notify/persist"
+        type: boolean
+        default: false
+      test:
+        description: "Send a Telegram test message confirming the watcher is live"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: twickets-hamilton
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: pip install "requests>=2.31"
+      - name: Watch
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SHOW_NAME: Hamilton
+          TWICKETS_TOUR_ID: ${{ vars.HAMILTON_TOUR_ID || '1208379530461323264' }}
+          EVENT_URL: https://www.twickets.live/en/tour/hamilton-the-musical/1208379530461323264
+          STATE_PATH: twickets_hamilton_state.json
+          DEBUG: ${{ inputs.debug && '1' || '' }}
+          MODE: ${{ inputs.test && 'test' || '' }}
+        run: python twickets.py
+      - name: Persist state
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test) }}
+        run: |
+          if [ -n "$(git status --porcelain twickets_hamilton_state.json)" ]; then
+            git config user.name "ticket-poller[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add twickets_hamilton_state.json
+            git commit -m "Update hamilton twickets state [skip ci]"
+            git push
+          else
+            echo "twickets_hamilton_state.json unchanged"
+          fi
