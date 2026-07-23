@@ -1,11 +1,13 @@
 name: twickets
 
-# Watches Twickets for resale availability of 1536 and alerts via Telegram.
-# Just a lightweight JSON API call (no browser), so it runs cheaply 24/7 —
-# resale tickets can appear at any hour and sell fast.
+# Watches Twickets for resale availability of 1536 and alerts via Telegram with
+# a one-tap buy link. Each scheduled run loops internally, polling every ~30s
+# for ~4.5 min; with cancel-in-progress:false a fresh run is always queued, so
+# coverage is effectively continuous and near-real-time (GitHub's plain cron
+# floor is 5 min — the internal loop is how we beat it). Resale sells fast.
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 min, round the clock
+    - cron: "*/5 * * * *"   # relaunch the ~4.5-min polling loop
   workflow_dispatch:
     inputs:
       debug:
@@ -27,6 +29,7 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,6 +45,10 @@ jobs:
           TWICKETS_TOUR_ID: ${{ vars.TWICKETS_TOUR_ID || '1921213724417335296' }}
           DEBUG: ${{ inputs.debug && '1' || '' }}
           MODE: ${{ inputs.test && 'test' || '' }}
+          # Loop ~4.5 min at 30s intervals for schedule/normal runs; single-shot
+          # for debug/test dispatches.
+          POLL_INTERVAL: ${{ vars.TWICKETS_POLL_INTERVAL || '30' }}
+          LOOP_DURATION: ${{ (inputs.debug || inputs.test) && '0' || '270' }}
         run: python twickets.py
       - name: Persist state
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test) }}
