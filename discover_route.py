@@ -36,7 +36,7 @@ with sync_playwright() as p:
 
     if ids:
         bid = ids[0]
-        for path in [f"/app/block/{bid}", f"/en/app/block/{bid}"]:
+        for path in [f"/en/event/{bid}", f"/app/block/{bid}"]:
             url = "https://www.twickets.live" + path
             print(f"\n=== navigate {url} ===")
             try:

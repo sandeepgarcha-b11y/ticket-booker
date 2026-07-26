@@ -63,7 +63,10 @@ def key(item):
 
 
 def block_url(bid):
-    return f"https://www.twickets.live/app/block/{bid}"
+    # The availability id is the event/listing id; the site's own listing links
+    # are /en/event/<id> (verified against live anchor hrefs). The old
+    # /app/block/<id> form just bounced to the homepage.
+    return f"https://www.twickets.live/en/event/{bid}"
 
 
 def block_detail(bid):
