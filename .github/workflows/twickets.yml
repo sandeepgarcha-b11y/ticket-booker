@@ -47,7 +47,7 @@ jobs:
           MODE: ${{ inputs.test && 'test' || '' }}
           # Loop ~4.5 min at 30s intervals for schedule/normal runs; single-shot
           # for debug/test dispatches.
-          POLL_INTERVAL: ${{ vars.TWICKETS_POLL_INTERVAL || '30' }}
+          POLL_INTERVAL: ${{ vars.TWICKETS_POLL_INTERVAL || '12' }}
           LOOP_DURATION: ${{ (inputs.debug || inputs.test) && '0' || '270' }}
         run: python twickets.py
       - name: Persist state
