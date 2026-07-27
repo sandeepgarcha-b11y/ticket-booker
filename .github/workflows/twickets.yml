@@ -43,6 +43,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TWICKETS_TOUR_ID: ${{ vars.TWICKETS_TOUR_ID || '1921213724417335296' }}
+          SHOW_NAME: "1536"
           DEBUG: ${{ inputs.debug && '1' || '' }}
           MODE: ${{ inputs.test && 'test' || '' }}
           # Loop ~4.5 min at 30s intervals for schedule/normal runs; single-shot

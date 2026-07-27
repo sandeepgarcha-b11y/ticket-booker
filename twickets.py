@@ -31,6 +31,7 @@ import requests
 TOUR_ID = os.environ.get("TWICKETS_TOUR_ID", "1921213724417335296")
 API_KEY = os.environ.get("TWICKETS_API_KEY", "83d6ec0c-54bb-4da3-b2a1-f3cb47b984f1")
 EVENT_URL = os.environ.get("EVENT_URL", f"https://www.twickets.live/en/tour/1536/{TOUR_ID}")
+SHOW_NAME = os.environ.get("SHOW_NAME", "1536")  # which show this watcher is for
 STATE_PATH = os.environ.get("STATE_PATH", "twickets_state.json")
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
@@ -134,7 +135,7 @@ def alert(new_ids, low, good):
         d = block_detail(b)
         lines.append(f"• {d}\n  {block_url(b)}" if d else f"• {block_url(b)}")
     notify(
-        f"🎟️ 1536 resale on Twickets — {len(new_ids)} new listing(s)!\n"
+        f"🎟️ {SHOW_NAME} resale on Twickets — {len(new_ids)} new listing(s)!\n"
         f"({len(good)} good + {len(low)} lower availability)\n\n"
         + "\n".join(lines[:12])
         + f"\n\nAll: {EVENT_URL}"
@@ -156,7 +157,7 @@ def run_test():
     n = len(low) + len(good)
     state = f"{n} listing(s) currently on sale" if n else "nothing on sale right now"
     notify(
-        "✅ Twickets watcher is live for 1536.\n"
+        f"✅ Twickets watcher is live for {SHOW_NAME}.\n"
         f"Right now: {state}.\n\n"
         "You'll get a message with a direct buy link the moment resale tickets appear.\n"
         f"{EVENT_URL}"

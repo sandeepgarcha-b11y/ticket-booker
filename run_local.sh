@@ -18,6 +18,7 @@ set -euo pipefail
 
 export TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN first: export TELEGRAM_BOT_TOKEN=...}"
 export TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-1391681044}"
+export SHOW_NAME="${SHOW_NAME:-1536}"
 export TWICKETS_TOUR_ID="${TWICKETS_TOUR_ID:-1921213724417335296}"
 export EVENT_URL="${EVENT_URL:-https://www.twickets.live/en/tour/1536/1921213724417335296}"
 export POLL_INTERVAL="${POLL_INTERVAL:-5}"       # seconds between checks
