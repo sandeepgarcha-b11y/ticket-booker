@@ -6,8 +6,10 @@ name: twickets
 # coverage is effectively continuous and near-real-time (GitHub's plain cron
 # floor is 5 min — the internal loop is how we beat it). Resale sells fast.
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # relaunch the ~4.5-min polling loop
+  # Scheduled polling disabled — watcher turned off at the user's request.
+  # Re-enable by uncommenting the cron below.
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       debug:

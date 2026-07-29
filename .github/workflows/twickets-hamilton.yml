@@ -4,8 +4,10 @@ name: twickets-hamilton
 # Same lightweight JSON-API watcher as 1536, just a different tour id + state
 # file so the two don't collide.
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 min, round the clock
+  # Scheduled polling disabled — watcher turned off at the user's request.
+  # Re-enable by uncommenting the cron below.
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       debug:

@@ -4,11 +4,10 @@ name: poll
 # performance becomes bookable. Scheduled workflows only run from the default
 # branch, so this must live on main to fire.
 on:
-  schedule:
-    # Every 5 min during daytime only — ticket releases/returns happen in box-
-    # office hours, so overnight polling is just noise. GitHub cron is UTC-only;
-    # the show runs entirely in BST (UTC+1), so 08–20 UTC == ~09:00–21:00 London.
-    - cron: "*/5 8-20 * * *"
+  # Scheduled polling disabled — watcher turned off at the user's request.
+  # Re-enable by uncommenting the cron below.
+  # schedule:
+  #   - cron: "*/5 8-20 * * *"
   workflow_dispatch:
     inputs:
       debug:
