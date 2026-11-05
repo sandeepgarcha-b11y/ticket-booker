@@ -1,12 +1,18 @@
 name: twickets-event
 
 # Watches a single Twickets EVENT (/en/event/<id>) for resale listings and
-# alerts via Telegram with a one-tap link. Each scheduled run loops internally
-# (~4.5 min, every ~12s) so coverage is near-continuous despite the 5-min cron
-# floor. Scheduled workflows only fire from the default branch (main).
+# alerts via Telegram with a one-tap link.
+#
+# Continuous coverage: GitHub's cron is unreliable here (the old "*/5" schedule
+# actually fired only every 1-3 hours), so each run polls for ~5h45m and then
+# dispatches the next run itself. The cron below is only a backstop that
+# restarts the chain if it ever breaks.
+#
+# To stop it: set repo variable TWICKETS_EVENT_CHAIN=off (stops after the
+# current run), cancel the running run, or Actions -> twickets-event -> Disable.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       debug:
@@ -32,6 +38,7 @@ on:
 
 permissions:
   contents: write
+  actions: write             # to dispatch the next run in the chain
 
 concurrency:
   group: twickets-event
@@ -40,8 +47,10 @@ concurrency:
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 355
     steps:
+      - name: Record start time
+        run: echo "START_TS=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -50,6 +59,7 @@ jobs:
       - name: Install deps
         run: pip install "requests>=2.31"
       - name: Watch
+        id: watch
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -61,7 +71,7 @@ jobs:
           DEBUG: ${{ inputs.debug && '1' || '' }}
           MODE: ${{ inputs.find_tour && 'find-tour' || (inputs.test && 'test' || '') }}
           POLL_INTERVAL: ${{ vars.TWICKETS_POLL_INTERVAL || '12' }}
-          LOOP_DURATION: ${{ (inputs.debug || inputs.test || inputs.find_tour) && '0' || '270' }}
+          LOOP_DURATION: ${{ (inputs.debug || inputs.test || inputs.find_tour) && '0' || vars.TWICKETS_EVENT_LOOP_SECONDS || '20700' }}
         run: python twickets.py
       - name: Persist state
         if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test && !inputs.find_tour) }}
@@ -72,7 +82,18 @@ jobs:
             git add twickets_event_state.json
             git commit -m "Update twickets event state [skip ci]"
             git pull --rebase --autostash || true
-            git push
+            git push || echo "::warning::state push failed; continuing"
           else
             echo "twickets_event_state.json unchanged"
           fi
+      - name: Start next run (continuous watching)
+        if: ${{ !cancelled() && steps.watch.outcome == 'success' && vars.TWICKETS_EVENT_CHAIN != 'off' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test && !inputs.find_tour)) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Safety: never chain faster than every 5 minutes, even if the watch
+          # loop exited early for some reason.
+          elapsed=$(( $(date +%s) - START_TS ))
+          if [ "$elapsed" -lt 300 ]; then sleep $(( 300 - elapsed )); fi
+          gh workflow run twickets-event.yml --ref main --repo "$GITHUB_REPOSITORY"
+          echo "next run dispatched"
