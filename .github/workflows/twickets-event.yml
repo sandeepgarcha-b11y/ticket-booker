@@ -21,6 +21,10 @@ on:
         description: "Print the tour id/title found on the public event page"
         type: boolean
         default: false
+      event_id:
+        description: "(debug/find_tour only) override the event id for this run"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -45,7 +49,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TWICKETS_EVENT_ID: ${{ vars.TWICKETS_EVENT_ID || '2053116298883239936' }}
+          TWICKETS_EVENT_ID: ${{ inputs.event_id || vars.TWICKETS_EVENT_ID || '2053116298883239936' }}
           TWICKETS_TOUR_ID: ${{ vars.TWICKETS_EVENT_TOUR_ID || '2116192548476166144' }}
           SHOW_NAME: ${{ vars.TWICKETS_EVENT_NAME || 'Bicep, Royal Albert Hall' }}
           STATE_PATH: twickets_event_state.json
