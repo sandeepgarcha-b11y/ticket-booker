@@ -5,8 +5,10 @@ name: twickets-event
 # (~4.5 min, every ~12s) so coverage is near-continuous despite the 5-min cron
 # floor. Scheduled workflows only fire from the default branch (main).
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # Schedule paused: Twickets returns 403 to requests from GitHub Actions, so
+  # scheduled runs can't see listings. Re-enable once that is resolved.
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       debug:
