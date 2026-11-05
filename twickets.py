@@ -233,7 +233,23 @@ def run_test():
     return 0
 
 
+def find_tour():
+    """Print tour links/ids and the title found in the public event page HTML."""
+    import re
+    url = f"https://www.twickets.live/en/event/{EVENT_ID}"
+    r = requests.get(url, headers={"User-Agent": UA}, timeout=20)
+    html = r.text
+    log(f"GET {url} -> {r.status_code}, {len(html)} bytes")
+    for pat in (r"<title>[^<]*</title>", r'og:title"[^>]*>', r"/tour/[\w%.-]+/\d{15,20}",
+                r'"?tour[_]?[iI]d"?\s*[:=]\s*"?\d{15,20}'):
+        for m in sorted(set(re.findall(pat, html)))[:10]:
+            log(f"  {m}")
+    return 0
+
+
 def main():
+    if os.environ.get("MODE", "").lower() == "find-tour":
+        return find_tour()
     if os.environ.get("MODE", "").lower() == "test":
         return run_test()
 
