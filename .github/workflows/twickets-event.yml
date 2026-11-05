@@ -25,6 +25,10 @@ on:
         description: "(debug/find_tour only) override the event id for this run"
         type: string
         default: ""
+      find_url:
+        description: "(find_tour only) a Twickets page or twckts.com short link to inspect"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -52,6 +56,7 @@ jobs:
           TWICKETS_EVENT_ID: ${{ inputs.event_id || vars.TWICKETS_EVENT_ID || '2053116298883239936' }}
           TWICKETS_TOUR_ID: ${{ vars.TWICKETS_EVENT_TOUR_ID || '2116192548476166144' }}
           SHOW_NAME: ${{ vars.TWICKETS_EVENT_NAME || 'Bicep, Royal Albert Hall' }}
+          FIND_URL: ${{ inputs.find_url }}
           STATE_PATH: twickets_event_state.json
           DEBUG: ${{ inputs.debug && '1' || '' }}
           MODE: ${{ inputs.find_tour && 'find-tour' || (inputs.test && 'test' || '') }}

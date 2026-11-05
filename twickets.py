@@ -199,10 +199,15 @@ def run_test():
 def find_tour():
     """Print tour links/ids and the title found in the public event page HTML."""
     import re
-    url = f"https://www.twickets.live/en/event/{EVENT_ID}"
+    url = os.environ.get("FIND_URL", "").strip() or f"https://www.twickets.live/en/event/{EVENT_ID}"
     r = requests.get(url, headers={"User-Agent": UA}, timeout=20)
     html = r.text
     log(f"GET {url} -> {r.status_code}, {len(html)} bytes")
+    if r.url != url:
+        log(f"  redirected to: {r.url}")
+        m = re.search(r"/event/(\d{15,20})", r.url)
+        if m:
+            log(f"  event id: {m.group(1)}")
     for pat in (r"<title>[^<]*</title>", r'og:title"[^>]*>', r"/tour/[\w%.-]+/\d{15,20}",
                 r'"?tour[_]?[iI]d"?\s*[:=]\s*"?\d{15,20}'):
         for m in sorted(set(re.findall(pat, html)))[:10]:
