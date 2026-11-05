@@ -16,9 +16,12 @@ Modes:
                        (used by the 1536 watcher for near-real-time coverage)
   otherwise            single check
 
-Event mode: set TWICKETS_EVENT_ID to watch a single event page
-(/en/event/<id>) instead of a whole tour. It polls the event's listings
-endpoint (services/g2/inventory/listings/<id>) and alerts on any new listing.
+Event mode: set TWICKETS_EVENT_ID (plus that event's TWICKETS_TOUR_ID) to watch
+one date. It polls the tour availability endpoint above and alerts when the
+event id shows up in low/good, i.e. when that date has resale tickets on sale.
+(The per-event listings endpoint is behind Twickets' bot protection, so it is
+deliberately not used.) MODE=find-tour prints the tour id and title found on
+the public event page, to fill in TWICKETS_TOUR_ID for a new event.
 
 Env: TWICKETS_EVENT_ID, TWICKETS_TOUR_ID, TWICKETS_API_KEY, EVENT_URL, TELEGRAM_BOT_TOKEN,
      TELEGRAM_CHAT_ID, STATE_PATH, POLL_INTERVAL, LOOP_DURATION.
@@ -64,45 +67,6 @@ def fetch_availability():
     r.raise_for_status()
     rd = r.json().get("responseData") or {}
     return rd.get("low") or [], rd.get("good") or []
-
-
-def fetch_event_listings():
-    """Event mode: return {listing_key: listing_dict} for TWICKETS_EVENT_ID."""
-    r = requests.get(
-        f"https://www.twickets.live/services/g2/inventory/listings/{EVENT_ID}?api_key={API_KEY}",
-        headers=HEADERS, timeout=20,
-    )
-    r.raise_for_status()
-    arr = r.json().get("responseData") or []
-    if isinstance(arr, dict):
-        arr = [arr]
-    out = {}
-    for d in arr:
-        k = None
-        if isinstance(d, dict):
-            for f in ("id", "listingId", "blockId", "ticketListingId"):
-                if d.get(f):
-                    k = str(d[f])
-                    break
-        out[k or key(d)] = d
-    return out
-
-
-def describe_listing(d):
-    if not isinstance(d, dict):
-        return ""
-    bits = []
-    sect = d.get("section") or d.get("area")
-    if sect:
-        bits.append(str(sect).title())
-    if d.get("row"):
-        bits.append(f"row {d['row']}")
-    prices = (d.get("pricing") or {}).get("prices") or []
-    if prices and prices[0].get("netSellingPrice"):
-        bits.append(f"£{prices[0]['netSellingPrice'] / 100:.0f} each")
-    if prices:
-        bits.append(f"x{len(prices)}")
-    return " · ".join(bits)
 
 
 def key(item):
@@ -189,17 +153,16 @@ def alert(new_ids, low, good):
 
 
 def event_poll_and_alert(known):
-    listings = fetch_event_listings()
-    current = set(listings)
-    new = current - known
-    log(f"twickets event {EVENT_ID}: total={len(current)} new={len(new)}")
-    if new:
-        lines = [f"• {describe_listing(listings[k]) or 'listing ' + k}" for k in sorted(new)]
+    low, good = fetch_availability()
+    tour_ids = {key(x) for x in low} | {key(x) for x in good}
+    current = {EVENT_ID} & tour_ids
+    log(f"twickets tour {TOUR_ID}: {len(tour_ids)} date(s) on sale; "
+        f"event {EVENT_ID} {'ON SALE' if current else 'not listed'}")
+    if current - known:
+        level = "plenty" if EVENT_ID in {key(x) for x in good} else "limited"
         notify(
-            f"🎟️ {SHOW_NAME} — {len(new)} new ticket listing(s) on Twickets!\n"
-            f"({len(current)} listed in total)\n\n"
-            + "\n".join(lines[:12])
-            + f"\n\nBuy now: {EVENT_URL}"
+            f"🎟️ {SHOW_NAME} — resale tickets just listed on Twickets! ({level} availability)\n\n"
+            f"Buy now: {EVENT_URL}"
         )
     return current
 
@@ -217,10 +180,10 @@ def poll_and_alert(known):
 
 
 def run_test():
+    low, good = fetch_availability()
     if EVENT_ID:
-        n = len(fetch_event_listings())
+        n = int(EVENT_ID in ({key(x) for x in low} | {key(x) for x in good}))
     else:
-        low, good = fetch_availability()
         n = len(low) + len(good)
     state = f"{n} listing(s) currently on sale" if n else "nothing on sale right now"
     notify(
@@ -254,10 +217,9 @@ def main():
         return run_test()
 
     if DEBUG and EVENT_ID:
-        listings = fetch_event_listings()
-        log(f"twickets event {EVENT_ID}: total={len(listings)}")
-        for k, d in list(listings.items())[:5]:
-            log(f"  {k}: {describe_listing(d)}  keys={sorted(d) if isinstance(d, dict) else type(d).__name__}")
+        low, good = fetch_availability()
+        log(f"tour {TOUR_ID}: low={low} good={good}")
+        log(f"event {EVENT_ID} on sale: {EVENT_ID in ({key(x) for x in low} | {key(x) for x in good})}")
         log("[debug] not notifying / not persisting")
         return 0
 
