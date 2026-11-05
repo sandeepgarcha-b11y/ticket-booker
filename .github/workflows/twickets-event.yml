@@ -1,14 +1,12 @@
 name: twickets-event
 
-# Watches a single Twickets EVENT page (/en/event/<id>) for resale listings and
+# Watches a single Twickets EVENT (/en/event/<id>) for resale listings and
 # alerts via Telegram with a one-tap link. Each scheduled run loops internally
 # (~4.5 min, every ~12s) so coverage is near-continuous despite the 5-min cron
 # floor. Scheduled workflows only fire from the default branch (main).
 on:
-  # Schedule paused: Twickets returns 403 to requests from GitHub Actions, so
-  # scheduled runs can't see listings. Re-enable once that is resolved.
-  # schedule:
-  #   - cron: "*/5 * * * *"
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       debug:
@@ -19,6 +17,14 @@ on:
         description: "Send a Telegram test message confirming the watcher is live"
         type: boolean
         default: false
+      find_tour:
+        description: "Print the tour id/title found on the public event page"
+        type: boolean
+        default: false
+      event_id:
+        description: "(debug/find_tour only) override the event id for this run"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -43,16 +49,17 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TWICKETS_EVENT_ID: ${{ vars.TWICKETS_EVENT_ID || '2053116298883239936' }}
-          SHOW_NAME: ${{ vars.TWICKETS_EVENT_NAME || 'Twickets event 2053116298883239936' }}
+          TWICKETS_EVENT_ID: ${{ inputs.event_id || vars.TWICKETS_EVENT_ID || '2053116298883239936' }}
+          TWICKETS_TOUR_ID: ${{ vars.TWICKETS_EVENT_TOUR_ID || '2116192548476166144' }}
+          SHOW_NAME: ${{ vars.TWICKETS_EVENT_NAME || 'Bicep, Royal Albert Hall' }}
           STATE_PATH: twickets_event_state.json
           DEBUG: ${{ inputs.debug && '1' || '' }}
-          MODE: ${{ inputs.test && 'test' || '' }}
+          MODE: ${{ inputs.find_tour && 'find-tour' || (inputs.test && 'test' || '') }}
           POLL_INTERVAL: ${{ vars.TWICKETS_POLL_INTERVAL || '12' }}
-          LOOP_DURATION: ${{ (inputs.debug || inputs.test) && '0' || '270' }}
+          LOOP_DURATION: ${{ (inputs.debug || inputs.test || inputs.find_tour) && '0' || '270' }}
         run: python twickets.py
       - name: Persist state
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test) }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test && !inputs.find_tour) }}
         run: |
           if [ -f twickets_event_state.json ] && [ -n "$(git status --porcelain twickets_event_state.json)" ]; then
             git config user.name "ticket-poller[bot]"
