@@ -1,0 +1,64 @@
+name: twickets-event
+
+# Watches a single Twickets EVENT page (/en/event/<id>) for resale listings and
+# alerts via Telegram with a one-tap link. Each scheduled run loops internally
+# (~4.5 min, every ~12s) so coverage is near-continuous despite the 5-min cron
+# floor. Scheduled workflows only fire from the default branch (main).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Diagnostic run: print findings, do not notify/persist"
+        type: boolean
+        default: false
+      test:
+        description: "Send a Telegram test message confirming the watcher is live"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: twickets-event
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install deps
+        run: pip install "requests>=2.31"
+      - name: Watch
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TWICKETS_EVENT_ID: ${{ vars.TWICKETS_EVENT_ID || '2053116298883239936' }}
+          SHOW_NAME: ${{ vars.TWICKETS_EVENT_NAME || 'Twickets event 2053116298883239936' }}
+          STATE_PATH: twickets_event_state.json
+          DEBUG: ${{ inputs.debug && '1' || '' }}
+          MODE: ${{ inputs.test && 'test' || '' }}
+          POLL_INTERVAL: ${{ vars.TWICKETS_POLL_INTERVAL || '12' }}
+          LOOP_DURATION: ${{ (inputs.debug || inputs.test) && '0' || '270' }}
+        run: python twickets.py
+      - name: Persist state
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.debug && !inputs.test) }}
+        run: |
+          if [ -f twickets_event_state.json ] && [ -n "$(git status --porcelain twickets_event_state.json)" ]; then
+            git config user.name "ticket-poller[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add twickets_event_state.json
+            git commit -m "Update twickets event state [skip ci]"
+            git pull --rebase --autostash || true
+            git push
+          else
+            echo "twickets_event_state.json unchanged"
+          fi
